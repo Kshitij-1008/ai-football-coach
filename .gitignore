@@ -1,0 +1,19 @@
+# EOF Dependencies
+node_modules/
+server/.venv/
+venv/
+server/.env
+
+# Build files
+frontend/.next
+
+# System files
+.DS_Store
+*.log
+
+# Large binaries (handled by LFS)
+*.dll
+*.lib
+*.pyd
+*.so
+
