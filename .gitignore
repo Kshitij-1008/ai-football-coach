@@ -17,3 +17,5 @@ frontend/.next
 *.pyd
 *.so
 
+
+.vercel
