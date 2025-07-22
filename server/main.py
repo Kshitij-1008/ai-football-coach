@@ -82,7 +82,7 @@ async def test_pose_estimation(request):
     """Test endpoint for pose estimation."""
     try: 
         # Use a test image from the server directory.
-        test_img_path = os.path.join(os.path.dirname(__file__), 'messi.jpeg')
+        test_img_path = os.path.join(os.path.dirname(__file__), 'Bassalona.jpeg')
         if not os.path.exists(test_img_path):
             return web.json_response(
                 {"error": "Test image not found"}, status=404)

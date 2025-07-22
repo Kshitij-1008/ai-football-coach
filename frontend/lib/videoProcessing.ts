@@ -11,15 +11,20 @@ export const processFrame = async (frameData: string): Promise<AnalysisResult> =
   try {
     // Rate limiting
     const now = Date.now();
+    console.log('Processing frame at:', now);
+    
     if (now - lastRequestTime < REQUEST_INTERVAL) {
+      console.log('Rate limiting - waiting for:', REQUEST_INTERVAL - (now - lastRequestTime), 'ms');
       await new Promise(resolve => setTimeout(resolve, REQUEST_INTERVAL - (now - lastRequestTime)));
     }
     lastRequestTime = Date.now();
 
     if (!frameData.startsWith('data:image/jpeg')) {
+      console.error('Invalid frame format:', frameData.substring(0, 30) + '...');
       throw new Error('Only JPEG images supported.');
     }
     
+    console.log('Sending frame to server, size:', frameData.length);
     const response = await fetch('http://localhost:8001/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -28,12 +33,15 @@ export const processFrame = async (frameData: string): Promise<AnalysisResult> =
 
     if (!response.ok) {
       const errorData = await response.json();
+      console.error('Server response error:', response.status, errorData);
       throw new Error(errorData.error || `Server error: ${response.status}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log('Frame processed successfully, points detected:', result.pose?.length);
+    return result;
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('Frame processing error:', error);
     return {
       pose: [],
       feedback: error instanceof Error ? error.message : 'Network Error'
