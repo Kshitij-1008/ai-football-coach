@@ -16,12 +16,35 @@ export default function VideoAnalysis() {
 
   // Process video at 1fps
   const processVideo = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current) {
+      console.log('Missing refs:', { video: !!videoRef.current, canvas: !!canvasRef.current });
+      return;
+    }
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    
+    // Wait for video dimensions to be available
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      console.log('Waiting for video dimensions...');
+      await new Promise<void>((resolve) => {
+        video.onloadeddata = () => {
+          console.log('Video dimensions available:', video.videoWidth, video.videoHeight);
+          resolve();
+        };
+      });
+    }
+
+    // Set canvas dimensions based on video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    console.log('Canvas dimensions set to:', canvas.width, 'x', canvas.height);
+    
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      console.error('Failed to get canvas context');
+      return;
+    }
 
     const duration = video.duration;
     const fps = 1; // 1 frame per second
@@ -29,6 +52,12 @@ export default function VideoAnalysis() {
     let currentTime = 0;
 
     const results: AnalysisResult[] = [];
+    
+    // Ensure video is ready for frame extraction
+    video.currentTime = 0;
+    await new Promise<void>((resolve) => {
+      video.onseeked = () => resolve();
+    });
 
     while (currentTime <= duration) {
       try {
@@ -69,298 +98,174 @@ export default function VideoAnalysis() {
   }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
+    if (!e.target.files?.length) {
+      console.log('No file selected');
+      return;
+    }
 
     const file = e.target.files[0];
+    console.log('File selected:', file.name, file.type, 'size:', file.size);
+
     if (!file.type.startsWith('video/')) {
       setError('Please upload a video file');
       return;
     }
 
     try {
+      // Create video element if it doesn't exist
+      if (!videoRef.current) {
+        const video = document.createElement('video');
+        videoRef.current = video;
+        console.log('Created new video element');
+      }
+
+      console.log('Starting video processing');
       setError('');
       setIsProcessing(true);
       setAnalysisResults([]);
       setFeedback('Processing video...');
 
       const videoUrl = URL.createObjectURL(file);
-      if (videoRef.current) {
-        videoRef.current.src = videoUrl;
-        await new Promise((resolve) => {
-          if (videoRef.current) {
-            videoRef.current.onloadedmetadata = resolve;
-          }
-        });
-        await processVideo();
-      }
+      console.log('Video URL created:', videoUrl);
+
+      // Reset and configure video element
+      const video = videoRef.current;
+      video.pause();
+      video.currentTime = 0;
+      video.preload = 'auto';
+      
+      // Set up error handling
+      video.onerror = (e) => {
+        console.error('Video loading error:', video.error);
+        setError(`Video loading error: ${video.error?.message || 'Unknown error'}`);
+      };
+
+      // Load the video
+      video.src = videoUrl;
+      console.log('Video source set, waiting for metadata...');
+      
+      await new Promise<void>((resolve, reject) => {
+        const timeoutId = setTimeout(() => reject(new Error('Video loading timeout')), 10000);
+        
+        video.onloadedmetadata = () => {
+          clearTimeout(timeoutId);
+          console.log('Video metadata loaded:', {
+            duration: video.duration,
+            dimensions: `${video.videoWidth}x${video.videoHeight}`
+          });
+          resolve();
+        };
+      });
+      
+      console.log('Starting frame processing');
+      await processVideo();
+      
     } catch (err) {
       console.error('Processing error:', err);
       setError(`Error processing video: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
       setIsProcessing(false);
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
     }
   };
-  
-  // // Validation Component (defined inside main component)
-  // const SystemDiagnostics = () => {
-  //   const [diagnostics, setDiagnostics] = useState<{
-  //     backend: boolean;
-  //     poseEstimation: boolean;
-  //     gemini: boolean;
-  //     errors: string[];
-  //   } | null>(null);
-  //   const [frameTest, setFrameTest] = useState<{
-  //     processed: boolean;
-  //     pointsDetected: number;
-  //   } | null>(null);
-  //   const [isTesting, setIsTesting] = useState(false);
-
-  //   const runTests = async () => {
-  //     setIsTesting(true);
-  //     try {
-  //       const diagResults = await runDiagnostics();
-  //       setDiagnostics(diagResults);
-        
-  //       const frameResults = await testFrameProcessing();
-  //       setFrameTest(frameResults);
-  //     } finally {
-  //       setIsTesting(false);
-  //     }
-  //   };
-
-  //   return (
-  //     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-  //       <h3 className="text-lg font-semibold mb-2">System Diagnostics</h3>
-  //       <button
-  //         onClick={runTests}
-  //         disabled={isTesting}
-  //         className="px-4 py-2 bg-blue-600 text-white rounded disabled:bg-gray-400"
-  //       >
-  //         {isTesting ? 'Running Tests...' : 'Run Diagnostics'}
-  //       </button>
-
-  //       {diagnostics && (
-  //         <div className="mt-4 space-y-2">
-  //           <div className="flex items-center">
-  //             <span className="w-40 font-medium">Backend Connection:</span>
-  //             <span className={diagnostics.backend ? 'text-green-600' : 'text-red-600'}>
-  //               {diagnostics.backend ? '✓ Working' : '✗ Failed'}
-  //             </span>
-  //           </div>
-  //           <div className="flex items-center">
-  //             <span className="w-40 font-medium">Pose Estimation:</span>
-  //             <span className={diagnostics.poseEstimation ? 'text-green-600' : 'text-red-600'}>
-  //               {diagnostics.poseEstimation ? '✓ Working' : '✗ Failed'}
-  //             </span>
-  //           </div>
-  //           <div className="flex items-center">
-  //             <span className="w-40 font-medium">Gemini API:</span>
-  //             <span className={diagnostics.gemini ? 'text-green-600' : 'text-red-600'}>
-  //               {diagnostics.gemini ? '✓ Working' : '✗ Failed'}
-  //             </span>
-  //           </div>
-
-  //           {frameTest && (
-  //             <div className="flex items-center">
-  //               <span className="w-40 font-medium">Frame Processing:</span>
-  //               <span className={frameTest.processed ? 'text-green-600' : 'text-red-600'}>
-  //                 {frameTest.processed ? `✓ Working (${frameTest.pointsDetected} points)` : '✗ Failed'}
-  //               </span>
-  //             </div>
-  //           )}
-
-  //           {diagnostics.errors.length > 0 && (
-  //             <div className="mt-3 p-2 bg-red-50 rounded">
-  //               <h4 className="font-medium text-red-800">Errors:</h4>
-  //               <ul className="list-disc pl-5 text-red-700">
-  //                 {diagnostics.errors.map((err, i) => (
-  //                   <li key={i}>{err}</li>
-  //                 ))}
-  //               </ul>
-  //             </div>
-  //           )}
-  //         </div>
-  //       )}
-  //     </div>
-  //   );
-  // };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      
-      <header className="py-6 bg-white/80 backdrop-blur-md shadow-sm">
+      <header className="py-8 bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-10">
         <div className="container mx-auto px-4">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-accent 
+                         bg-clip-text text-transparent animate-fade-in">
             AI Football Coach
           </h1>
-          <p className="text-grey-600 mt-2">
-            Get real-time technical feedback on your technique.
+          <p className="text-gray-600 mt-2 text-lg">
+            Upload your football technique video for AI-powered feedback
           </p>
         </div>
       </header>
 
-      
-      {/* <main className="container mx-auto px-4 py-8">
-
-        
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden animated-card">
-          <div className="p-6">
-            <div className="flex items-center space-x-4 mb-6">
-              <div className="p-3 rounded-full bg-blue-100 text-primary">
-                <UploadIcon className="w-6 h-6" />
-              </div>
-              <h2 className="text-xl font-semibold">Analyze your Video</h2>
-            </div>
-
+      <main className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto space-y-8">
+          <div className="animated-card bg-white p-8 rounded-2xl shadow-card">
             <input 
               type="file"
+              accept="video/*"
+              onChange={handleFileChange}
               className="hidden"
               id="video-upload"
-              accept="video/*"
-              onChange={handleFileChange}  
             />
             <label 
-              htmlFor='video-upload'
-              className="btn-primary block w-full py-3 px-6 text-center 
-              text-white rounded-lg cursor-pointer transition-all hover:shadow-lg"
+              htmlFor="video-upload"
+              className="btn-primary flex items-center justify-center gap-2"
             >
               {isProcessing ? (
-                  <span className="flex items-center justify-center">
-                    <SpinnerIcon className="mr-2" />
-                    Processing...
-                  </span>
+                <>
+                  <SpinnerIcon className="w-5 h-5" />
+                  Processing Video...
+                </>
               ) : (
-                'Upload Training Video'
-              )} 
+                <>
+                  <UploadIcon className="w-5 h-5" />
+                  Upload Training Video
+                </>
+              )}
             </label>
           </div>
-        </div>
 
-        
-        {error && (
-        <div className="p-4 bg-red-100 text-red-800 rounded-lg">
-          {error}
-        </div>
-        )}
-
-        
-        {videoRef.current?.src && (
-          <div className="mt-8 bg-gradient-to-r from-field-green/10 to-blue-100/50 p-1 rounded-2xl">
-            <div className="relative bg-black rounded-xl overflow-hidden">
-              <video
-                ref={videoRef}
-                controls
-                className="w-full aspect-video rounded-lg"
-              />
-              <canvas 
-                ref={canvasRef}
-                className="absolute inset-0 w-full pointer-events-none"  
-              />
+          {videoRef.current?.src && (
+            <div className="animated-card">
+              <div className="bg-gradient-to-r from-field-green/10 to-blue-100/50 
+                            p-1 rounded-2xl shadow-lg">
+                <div className="relative bg-black rounded-xl overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    controls
+                    preload="auto"
+                    className="w-full aspect-video rounded-lg block"
+                    style={{ display: videoRef.current?.src ? 'block' : 'none' }}
+                  />
+                  <canvas 
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        
-        <div className="my-8 space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-md border-1-4 border-accent">
-            <h3 className="font-bold text-lg flex items-center">
-              <SparklesIcon className="text-yellow-500 mr-2" />
+          <div className="feedback-card">
+            <h3 className="font-bold text-xl flex items-center gap-2">
+              <SparklesIcon className="text-accent" />
               Coach's Feedback
             </h3>
-            <div className="my-4 p-4 bg-blue-50 rounded-lg animate-pulse">
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
               {feedback || "Waiting for analysis..."}
             </div>
           </div>
 
-          
           {analysisResults.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {analysisResults.map((result, index) => (
-                <div key={index}className="bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center mb-2">
-                    <span className="inline-block w-8 h-8 rounded-full bg-primary text-white items-center justify-center mr-3">
+                <div key={index} 
+                     className="bg-white p-6 rounded-xl shadow-card hover:shadow-hover 
+                                transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="w-8 h-8 rounded-full bg-primary text-white 
+                                   flex items-center justify-center font-semibold">
                       {index + 1}
                     </span>
-                    <span className="font-medium"> At {index}s</span>
+                    <span className="font-medium text-gray-700">
+                      Timestamp: {index}s
+                    </span>
                   </div>
-                  <p className="text-gray-700">{result.feedback}</p>
+                  <p className="text-gray-600">{result.feedback}</p>
                 </div>
               ))}
             </div>
           )}
         </div>
-
-        
-        <SystemDiagnostics />
-
-      </main> */}
-
-
-      <div className="mb-4">
-        <input 
-          type="file" 
-          accept="video/*" 
-          onChange={handleFileChange}
-          disabled={isProcessing}
-          className="block w-full text-sm text-gray-500
-            file:mr-4 file:py-2 file:px-4
-            file:rounded-md file:border-0
-            file:text-sm file:font-semibold
-            file:bg-blue-50 file:text-blue-700
-            hover:file:bg-blue-100"
-        />
-      </div>
-      
-      {error && (
-        <div className="p-4 bg-red-100 text-red-800 rounded-lg">
-          {error}
-        </div>
-      )}
-
-      <div className="relative">
-        <video 
-          ref={videoRef}
-          controls
-          className="w-full rounded-lg border-2 border-gray-300"
-        />
-        <canvas
-          ref={canvasRef}
-          width={640}
-          height={480}
-          className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-0"
-        />
-      </div>
-
-      <div className="p-4 bg-white rounded-lg shadow-md">
-        <p className="font-semibold">Coach Feedback:</p>
-        <p className="mt-2">{feedback}</p>
-        {isProcessing && (
-          <div className="mt-2">
-            <progress 
-              value={currentTime} 
-              max={videoRef.current?.duration || 100} 
-              className="w-full"
-            />
-            <p>Processing: {Math.round(currentTime)}s</p>
-          </div>
-        )}
-      </div>
-
-      {analysisResults.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-2">Analysis Results</h3>
-          <div className="space-y-4">
-            {analysisResults.map((result, index) => (
-              <div key={index} className="p-4 border rounded-lg">
-                <p className="text-sm text-gray-500">Time: {index}s</p>
-                <p className="mt-1">{result.feedback}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Validation Component Placement */}
-      {/* <SystemDiagnostics /> */}
+      </main>
     </div>
   );
 }
